@@ -87,6 +87,85 @@ static void add_host(const char *ip, const char *name) {
     hosts = e;
 }
 
+/* Convert reverse DNS name to IP string. Returns 0 on success, -1 on failure */
+static int reverse_name_to_ip(const char *rev, char *out_ip, size_t out_len) {
+    const char *suffix = ".in-addr.arpa";
+    size_t revlen = strlen(rev);
+    size_t suffixlen = strlen(suffix);
+    if (revlen <= suffixlen) return -1;
+    if (strcasecmp(rev + revlen - suffixlen, suffix) != 0) return -1;
+    char tmp[256];
+    size_t partlen = revlen - suffixlen;
+    if (partlen >= sizeof(tmp)) return -1;
+    memcpy(tmp, rev, partlen);
+    tmp[partlen] = '\0';
+    // split tokens
+    char *tokens[10];
+    int count = 0;
+    char *p = strtok(tmp, ".");
+    while (p && count < 10) {
+        tokens[count++] = p;
+        p = strtok(NULL, ".");
+    }
+    if (count < 4) return -1;
+    // build IP in reverse order
+    snprintf(out_ip, out_len, "%s.%s.%s.%s", tokens[3], tokens[2], tokens[1], tokens[0]);
+    return 0;
+}
+
+/* Forward declarations */
+static int read_name(const uint8_t *msg, size_t msg_len, size_t *offset, char *out, size_t out_len);
+static size_t write_name(uint8_t *buf, const char *name);
+
+/* Build PTR response for given hostname */
+static void build_ptr_response(const uint8_t *query, size_t qlen, uint8_t *out, size_t *outlen, const char *hostname) {
+    char qname[256];
+    size_t name_offset = sizeof(dns_header_t);
+    if (read_name(query, qlen, &name_offset, qname, sizeof(qname)) != 0) {
+        qname[0] = '\0';
+    }
+    dns_header_t *qh = (dns_header_t *)query;
+    dns_header_t *rh = (dns_header_t *)out;
+    memcpy(rh, qh, sizeof(dns_header_t));
+    rh->flags = htons(0x8180);
+    rh->ancount = htons(1);
+    rh->nscount = 0;
+    rh->arcount = 0;
+    size_t pos = sizeof(dns_header_t);
+    // Copy only the question section (without any additional records)
+    size_t q_offset = sizeof(dns_header_t);
+    char tmp[256];
+    if (read_name(query, qlen, &q_offset, tmp, sizeof(tmp)) == 0) {
+        // advance past QTYPE and QCLASS (4 bytes)
+        q_offset += 4;
+    }
+    size_t question_len = q_offset - sizeof(dns_header_t);
+    memcpy(out + pos, query + sizeof(dns_header_t), question_len);
+    pos += question_len;
+    // answer name: compression pointer to query name at offset 12
+    out[pos++] = 0xC0; out[pos++] = 0x0C;
+    // TYPE PTR (12), CLASS IN
+    out[pos++] = 0x00; out[pos++] = 0x0c;
+    out[pos++] = 0x00; out[pos++] = 0x01;
+    uint32_t ttl = htonl(TTL);
+    memcpy(out + pos, &ttl, 4); pos += 4;
+    // placeholder for RDLENGTH
+    size_t rdlen_pos = pos;
+    pos += 2;
+    // write hostname as domain name
+    size_t host_len = write_name(out + pos, hostname);
+    pos += host_len;
+    // fill RDLENGTH (network byte order, no htons needed for length)
+    uint16_t rdlen = host_len;
+    out[rdlen_pos] = (rdlen >> 8) & 0xFF;
+    out[rdlen_pos + 1] = rdlen & 0xFF;
+    *outlen = pos;
+    if (verbose) {
+        fprintf(stderr, "[DEBUG] build_ptr_response length %zu qname='%s'\n", pos, qname);
+    }
+}
+
+/* ---------- Main Server Loop ---------- */
 /* Load and parse a hosts‑style file, populating the map */
 static void load_hosts_file(const char *path) {
     FILE *fp = fopen(path, "r");
@@ -112,6 +191,7 @@ static void load_hosts_file(const char *path) {
 
 /* Look up the IP address for a given hostname, handling local domain logic */
 static const char *find_ip(const char *name) {
+
     // Debug: show query name
     if (verbose) fprintf(stderr, "[DEBUG] find_ip called with '%s'\n", name);
 
@@ -147,6 +227,14 @@ static const char *find_ip(const char *name) {
         for (host_entry_t *e = hosts; e; e = e->next) {
             if (strcmp(e->name, qualified) == 0) return e->ip;
         }
+    }
+    return NULL;
+}
+
+/* Find hostname for given IP address */
+static const char *find_name_by_ip(const char *ip) {
+    for (host_entry_t *e = hosts; e; e = e->next) {
+        if (strcmp(e->ip, ip) == 0) return e->name;
     }
     return NULL;
 }
@@ -261,9 +349,15 @@ static void build_response(const uint8_t *query, size_t qlen, uint8_t *out, size
     rh->nscount = 0;
     rh->arcount = 0;
     size_t pos = sizeof(dns_header_t);
-    // copy question section unchanged
-    memcpy(out + pos, query + sizeof(dns_header_t), qlen - sizeof(dns_header_t));
-    pos += qlen - sizeof(dns_header_t);
+    // copy only the question section (exclude any additional records)
+    size_t q_offset = sizeof(dns_header_t);
+    char tmp[256];
+    if (read_name(query, qlen, &q_offset, tmp, sizeof(tmp)) == 0) {
+        q_offset += 4; // skip QTYPE and QCLASS
+    }
+    size_t question_len = q_offset - sizeof(dns_header_t);
+    memcpy(out + pos, query + sizeof(dns_header_t), question_len);
+    pos += question_len;
     // answer: name (full name, no compression)
     pos += write_name(out + pos, qname);
     // TYPE A, CLASS IN
@@ -280,7 +374,6 @@ static void build_response(const uint8_t *query, size_t qlen, uint8_t *out, size
     memcpy(out + pos, &addr, 4); pos += 4;
     *outlen = pos;
     if (verbose) fprintf(stderr, "[DEBUG] build_response length %zu\n", pos);
-
 }
 
 /* ---------- Main Server Loop ---------- */
@@ -354,6 +447,28 @@ if (FD_ISSET(udp_sock, &readset)) {
             memcpy(&qtype, buf + offset, 2); offset += 2;
             memcpy(&qclass, buf + offset, 2); offset += 2;
             qtype = ntohs(qtype); qclass = ntohs(qclass);
+            if (qtype == 12 && qclass == 1) {
+                // PTR query – perform reverse lookup
+                char ip[64];
+                if (reverse_name_to_ip(qname, ip, sizeof(ip)) == 0) {
+                    const char *host = find_name_by_ip(ip);
+                    if (host) {
+                        uint8_t resp[MAX_DNS_MSG];
+                        size_t resp_len = 0;
+                        build_ptr_response(buf, n, resp, &resp_len, host);
+                        sendto(udp_sock, resp, resp_len, 0, (struct sockaddr *)&cli, clilen);
+                    } else {
+                        dns_header_t *hdr = (dns_header_t *)buf;
+                        hdr->flags = htons(0x8183); // NXDOMAIN
+                        sendto(udp_sock, buf, n, 0, (struct sockaddr *)&cli, clilen);
+                    }
+                } else {
+                    dns_header_t *hdr = (dns_header_t *)buf;
+                    hdr->flags = htons(0x8184); // NOTIMP for malformed
+                    sendto(udp_sock, buf, n, 0, (struct sockaddr *)&cli, clilen);
+                }
+                continue;
+            }
             if (qtype != 1 || qclass != 1) {
                 // not A/IN – respond with NOTIMP
                 dns_header_t *hdr = (dns_header_t *)buf;
@@ -416,7 +531,27 @@ if (recv(client, buf, msglen, MSG_WAITALL) != msglen) { close(client); continue;
             qtype = ntohs(qtype); qclass = ntohs(qclass);
             uint8_t resp[MAX_DNS_MSG];
             size_t resp_len = 0;
-            if (qtype != 1 || qclass != 1) {
+            if (qtype == 12 && qclass == 1) {
+                // PTR query – reverse lookup
+                char ip[64];
+                if (reverse_name_to_ip(qname, ip, sizeof(ip)) == 0) {
+                    const char *host = find_name_by_ip(ip);
+                    if (host) {
+                        build_ptr_response(buf, msglen, resp, &resp_len, host);
+                    } else {
+                        dns_header_t *hdr = (dns_header_t *)buf;
+                        hdr->flags = htons(0x8183); // NXDOMAIN
+                        memcpy(resp, buf, msglen);
+                        resp_len = msglen;
+                    }
+                } else {
+                    dns_header_t *hdr = (dns_header_t *)buf;
+                    hdr->flags = htons(0x8184); // NOTIMP malformed
+                    memcpy(resp, buf, msglen);
+                    resp_len = msglen;
+                }
+                // response ready
+            } else if (qtype != 1 || qclass != 1) {
                 dns_header_t *hdr = (dns_header_t *)buf;
                 hdr->flags = htons(0x8184);
                 memcpy(resp, buf, msglen);

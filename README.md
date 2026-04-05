@@ -46,7 +46,8 @@ minidns <local_domain> [-f hostsfile] [-l listen_address] [-P listen_port]
 ```
 The above command will:
 - Listen on all interfaces, port 53.
-- Answer queries like `host1.demo.local` using entries from `myhosts.txt`.
+- Answer forward queries like `host1.demo.local` using entries from `myhosts.txt`.
+- Answer reverse DNS (PTR) lookups for IPs defined in `myhosts.txt`.
 - Forward any query not ending with `demo.local` to `8.8.8.8`.
 - Print debug information about each received query.
 
@@ -66,7 +67,7 @@ The file follows the classic `/etc/hosts` syntax:
 
 ## Notes
 
-- Only **A** records are supported; other record types return **NOTIMP**.
+- Supports **A** (IPv4) and **PTR** (reverse DNS) records; other types return **NOTIMP**.
 - TCP handling follows the same logic as UDP but with a 2‑byte length prefix as required by the DNS‑over‑TCP spec.
 - The server does **not** implement recursion; it merely forwards queries.
 - Be sure to run the program with sufficient privileges to bind to port 53 (e.g., as root or with `setcap`).
