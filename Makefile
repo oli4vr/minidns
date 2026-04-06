@@ -5,7 +5,7 @@ SRC=minidns.c
 
 VERSION=1.0.0
 
-.PHONY: all install rpm deb clean uninstall distclean
+.PHONY: all install rpm deb clean uninstall distclean oci
 
 all: $(TARGET)
 
@@ -48,6 +48,11 @@ deb: $(TARGET)
 	@install -D -m 0644 minidns.env.sample build/deb/etc/minidns.env
 	cp debian.control build/deb/DEBIAN/control
 	dpkg-deb --build build/deb $(TARGET)-$(VERSION).deb
+
+# Build OCI container image using Docker
+oci: $(TARGET)
+	@docker build -t $(TARGET):$(VERSION) .
+
 
 clean:
 	rm -f $(TARGET)

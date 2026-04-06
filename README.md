@@ -3,7 +3,6 @@
 A tiny DNS server that serves a custom local domain using a hosts‑style file.
 
 
-
 ## What it does
 
 - Reads a hosts file (default `/etc/hosts` or a file supplied with `-f`).
@@ -37,35 +36,6 @@ minidns <local_domain> [-f hostsfile] [-l listen_address] [-P listen_port]
 | `-v` | Enable verbose debug output (printed to `stderr`). |
 
 
-## Installation
-
-```bash
-sudo make install
-```
-
-## Packaging
-
-```bash
-# Build a .deb package
-make deb
-
-# Build an .rpm package (may require root permissions)
-make rpm
-```
-
-## Uninstallation
-
-```bash
-sudo make uninstall
-```
-
-## Clean
-
-```bash
-make clean        # remove binary and build directory
-make distclean    # also remove generated packages
-```
-
 ## Example
 
 ```bash
@@ -78,7 +48,7 @@ The above command will:
 - Answer forward queries like `host1.demo.local` using entries from `myhosts.txt`.
 - Answer reverse DNS (PTR) lookups for IPs defined in `myhosts.txt`.
 - Forward any query not ending with `demo.local` to `8.8.8.8`.
-- Print debug information about each received query.
+- Print debug information about the received query.
 
 
 ## Hosts file format
@@ -93,7 +63,6 @@ The file follows the classic `/etc/hosts` syntax:
 - Lines starting with `#` or empty lines are ignored.
 
 
-
 ## Notes
 
 - Supports **A** (IPv4) and **PTR** (reverse DNS) records; other types return **NOTIMP**.
@@ -101,3 +70,28 @@ The file follows the classic `/etc/hosts` syntax:
 - The server does **not** implement recursion; it merely forwards queries.
 - Be sure to run the program with sufficient privileges to bind to port 53 (e.g., as root or with `setcap`).
 
+## Docker
+
+Build the OCI image:
+```bash
+make oci
+```
+
+Run with Docker Compose (example `docker-compose.yml`):
+```yaml
+version: "3.8"
+services:
+  minidns:
+    image: minidns:1.0.0
+    container_name: minidns
+    environment:
+      DOMAIN: example.local
+      PRIMARY_DNS: 8.8.8.8
+      SECONDARY_DNS: 8.8.4.4
+    volumes:
+      - ./hosts:/data/hosts:ro
+    ports:
+      - "53:53/udp"
+      - "53:53/tcp"
+```
+The container reads the hosts file from the mounted volume `/data/hosts`. Adjust `DOMAIN`, `PRIMARY_DNS`, and `SECONDARY_DNS` as needed.
