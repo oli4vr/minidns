@@ -1,0 +1,7 @@
+Package: minidns
+Version: 1.0.0
+Section: net
+Priority: optional
+Architecture: amd64
+Maintainer: Builder <builder@example.com>
+Description: Minimal DNS server

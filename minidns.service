@@ -1,0 +1,12 @@
+[Unit]
+Description=Minimal DNS Server
+After=network.target
+
+[Service]
+EnvironmentFile=/etc/minidns.env
+ExecStart=/usr/bin/minidns ${DOMAIN} -f /etc/hosts -l 0.0.0.0 -p ${PRIMARY_DNS} -s ${SECONDARY_DNS}
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
+

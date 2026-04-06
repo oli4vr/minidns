@@ -54,5 +54,12 @@ dkms.conf
 # debug information files
 *.dwo
 
+# various
+AGENTS.md
+*.deb
+*.rpm
+build
+
 # exe
 minidns
+

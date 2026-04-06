@@ -37,6 +37,35 @@ minidns <local_domain> [-f hostsfile] [-l listen_address] [-P listen_port]
 | `-v` | Enable verbose debug output (printed to `stderr`). |
 
 
+## Installation
+
+```bash
+sudo make install
+```
+
+## Packaging
+
+```bash
+# Build a .deb package
+make deb
+
+# Build an .rpm package (may require root permissions)
+make rpm
+```
+
+## Uninstallation
+
+```bash
+sudo make uninstall
+```
+
+## Clean
+
+```bash
+make clean        # remove binary and build directory
+make distclean    # also remove generated packages
+```
+
 ## Example
 
 ```bash

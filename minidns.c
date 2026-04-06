@@ -180,9 +180,13 @@ static void load_hosts_file(const char *path) {
         if (*p == '\0' || *p == '#') continue;
         char *ip = strtok(p, " \t");
         if (!ip) continue;
+        // Skip loopback (127.*) and IPv6 addresses
+        if (strncmp(ip, "127.", 4) == 0 || strchr(ip, ':')) continue;
         char *host;
         while ((host = strtok(NULL, " \t\n")) != NULL) {
             if (*host == '#') break; // comment after hosts
+            // Skip localhost entries explicitly
+            if (strcasecmp(host, "localhost") == 0) continue;
             add_host(ip, host);
         }
     }
