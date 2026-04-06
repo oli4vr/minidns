@@ -70,6 +70,22 @@ The file follows the classic `/etc/hosts` syntax:
 - The server does **not** implement recursion; it merely forwards queries.
 - Be sure to run the program with sufficient privileges to bind to port 53 (e.g., as root or with `setcap`).
 
+## Packaging
+
+### DEB package
+
+```bash
+make deb
+```
+Creates `minidns-$(VERSION).deb` in the repository root.
+
+### RPM package
+
+```bash
+make rpm
+```
+Builds `minidns-$(VERSION).rpm` in the repository root (may require root privileges).
+
 ## Docker
 
 Build the OCI image:
