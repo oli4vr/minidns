@@ -101,11 +101,11 @@ services:
     image: minidns:1.0.0
     container_name: minidns
     environment:
-      DOMAIN: example.local
-      PRIMARY_DNS: 8.8.8.8
-      SECONDARY_DNS: 8.8.4.4
+      DOMAIN: local
+      PRIMARY_DNS: 9.9.9.9
+      SECONDARY_DNS: 1.1.1.1
     volumes:
-      - ./hosts:/data/hosts:ro
+      - /etc/hosts:/data/hosts:ro
     ports:
       - "53:53/udp"
       - "53:53/tcp"
